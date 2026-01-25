@@ -1,0 +1,19 @@
+[package]
+name = "track17-scraper"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chaser-oxide = { git = "https://github.com/ccheshirecat/chaser-oxide" }
+wreq = { git = "https://github.com/0x676e67/wreq", features = ["cookies", "json", "gzip", "brotli", "zstd"] }
+wreq-util = { git = "https://github.com/0x676e67/wreq-util" }
+futures = "0.3"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+base64 = "0.22"
+zipcodes = "0.3"
+
+[patch.crates-io]
+wreq = { git = "https://github.com/0x676e67/wreq" }
