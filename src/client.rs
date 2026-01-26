@@ -42,6 +42,7 @@ fn extract_sign_from_event(event: &EventRequestPaused) -> Option<String> {
         })
 }
 const INVALID_SIGN_CODE: i32 = -11;
+const INVALID_SESSION_CODE: i32 = -14; // Session/cookie expired (empty shipments, empty guid)
 const PENDING_SHIPMENT_CODE: i32 = 100;
 const NOT_FOUND_SHIPMENT_CODE: i32 = 400;
 const EXTRACTION_TIMEOUT: Duration = Duration::from_secs(15);
@@ -494,9 +495,14 @@ impl Track17Client {
                     .join(", ")
             );
 
-            // Handle sign expiration - need to re-extract credentials (launches Chrome briefly)
-            if response.meta.code == INVALID_SIGN_CODE {
-                eprintln!("Sign expired, refreshing credentials...");
+            // Handle sign/session expiration - need to re-extract credentials (launches Chrome briefly)
+            // Code -11: Invalid sign (signature expired)
+            // Code -14: Invalid session (cookies expired, returns empty shipments/guid)
+            if response.meta.code == INVALID_SIGN_CODE || response.meta.code == INVALID_SESSION_CODE {
+                eprintln!(
+                    "Credentials expired (code {}), refreshing...",
+                    response.meta.code
+                );
                 self.credentials = None;
                 self.extract_credentials(&tracking_numbers[0]).await?;
                 continue;
