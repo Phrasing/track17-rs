@@ -1,15 +1,11 @@
 # track17-rs
 
-Rust library and CLI for tracking packages via 17track.net API with full browser fingerprint emulation.
+Rust library and CLI for tracking packages via 17track.net private API.
 
 ## Features
 
-- Stealth Chrome automation via `chaser-oxide` for credential extraction
-- `wreq` HTTP client with Chrome 143 TLS fingerprinting
-- Proxy support (HTTP/HTTPS with authentication)
 - Auto-detect carrier or specify FedEx, UPS, USPS, DHL
 - Batch tracking for multiple packages
-- US zip code resolution to city/state
 
 ## Usage
 
