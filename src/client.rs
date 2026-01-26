@@ -338,6 +338,16 @@ impl Track17Client {
     ) -> Result<TrackingResponse> {
         let creds = self.credentials.as_ref().unwrap().clone();
 
+        // Log request details
+        eprintln!(
+            "[track17-req] items={:?}, guid={}, sign_len={}, last_event_id_len={}, yq_bid_len={}",
+            items.iter().map(|i| format!("{}:{}", i.num, i.fc)).collect::<Vec<_>>(),
+            if guid.is_empty() { "(empty)" } else { &guid[..guid.len().min(8)] },
+            creds.sign.len(),
+            creds.last_event_id.len(),
+            creds.yq_bid.len(),
+        );
+
         let request = TrackingRequest {
             data: items.to_vec(),
             guid: guid.to_string(),
@@ -363,6 +373,14 @@ impl Track17Client {
 
         let status = response.status();
         let body = response.text().await?;
+
+        // Log raw response (truncated for readability)
+        eprintln!(
+            "[track17-resp] status={}, body_len={}, body_preview={}",
+            status,
+            body.len(),
+            &body[..body.len().min(500)]
+        );
 
         if !status.is_success() {
             anyhow::bail!("API request failed: {} {}", status, body);
@@ -453,6 +471,29 @@ impl Track17Client {
 
             let response = self.make_request(&pending_items, &session_guid).await?;
 
+            // Log parsed response details
+            eprintln!(
+                "[track17-parsed] meta.code={}, meta.message={}, guid={}, shipments: [{}]",
+                response.meta.code,
+                response.meta.message,
+                if response.guid.is_empty() { "(empty)" } else { &response.guid[..response.guid.len().min(8)] },
+                response.shipments.iter()
+                    .map(|s| format!(
+                        "{}:code={},has_shipment={},has_events={}",
+                        s.number,
+                        s.code,
+                        s.shipment.is_some(),
+                        s.shipment.as_ref()
+                            .map(|d| d.latest_event.is_some() || d.tracking.as_ref()
+                                .and_then(|t| t.providers.as_ref())
+                                .map(|p| p.iter().any(|prov| !prov.events.is_empty()))
+                                .unwrap_or(false))
+                            .unwrap_or(false)
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+
             // Handle sign expiration - need to re-extract credentials (launches Chrome briefly)
             if response.meta.code == INVALID_SIGN_CODE {
                 eprintln!("Sign expired, refreshing credentials...");
@@ -498,6 +539,12 @@ impl Track17Client {
                 .count();
 
             if still_pending > 0 {
+                // Log retry decision
+                eprintln!(
+                    "[track17-retry] pending={}, retry_count={}/{}",
+                    still_pending, pending_retries + 1, MAX_PENDING_RETRIES
+                );
+
                 if pending_retries >= MAX_PENDING_RETRIES {
                     // Max retries reached, add remaining as-is
                     eprintln!("Max retries reached, returning partial results");
