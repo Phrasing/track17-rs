@@ -104,7 +104,7 @@ impl Track17Client {
             .await
             .map_err(|e| anyhow::anyhow!("Failed to launch browser: {}", e))?;
 
-        let handler_task = tokio::spawn(async move { while let Some(_) = handler.next().await {} });
+        let handler_task = tokio::spawn(async move { while handler.next().await.is_some() {} });
 
         // Build HTTP client with optional proxy
         let mut http_builder = Client::builder()
@@ -122,19 +122,13 @@ impl Track17Client {
         let http_client = http_builder.build()?;
 
         // Verify proxy by checking external IP
-        if proxy.is_some() {
-            match http_client.get("https://httpbin.org/ip").send().await {
-                Ok(resp) => {
-                    if let Ok(body) = resp.text().await {
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
-                            if let Some(ip) = json.get("origin").and_then(|v| v.as_str()) {
-                                eprintln!("Proxy IP: {}", ip);
-                            }
-                        }
-                    }
-                }
-                Err(_) => {} // Silently ignore - proxy works if tracking succeeds
-            }
+        if proxy.is_some()
+            && let Ok(resp) = http_client.get("https://httpbin.org/ip").send().await
+            && let Ok(body) = resp.text().await
+            && let Ok(json) = serde_json::from_str::<serde_json::Value>(&body)
+            && let Some(ip) = json.get("origin").and_then(|v| v.as_str())
+        {
+            eprintln!("Proxy IP: {}", ip);
         }
 
         Ok(Self {
@@ -376,18 +370,18 @@ impl Track17Client {
                 let num = shipment.number.clone();
 
                 // Code 400 with carrier suggestions - retry with suggested carrier
-                if shipment.code == NOT_FOUND_SHIPMENT_CODE {
-                    if let Some(suggested) = Self::get_suggested_carrier(&shipment) {
-                        eprintln!(
-                            "Auto-detect failed for {}, retrying with carrier {}",
-                            num, suggested
-                        );
-                        // Update the item's carrier for next iteration
-                        if let Some(item) = items.iter_mut().find(|i| i.num == num) {
-                            item.fc = suggested;
-                        }
-                        continue;
+                if shipment.code == NOT_FOUND_SHIPMENT_CODE
+                    && let Some(suggested) = Self::get_suggested_carrier(&shipment)
+                {
+                    eprintln!(
+                        "Auto-detect failed for {}, retrying with carrier {}",
+                        num, suggested
+                    );
+                    // Update the item's carrier for next iteration
+                    if let Some(item) = items.iter_mut().find(|i| i.num == num) {
+                        item.fc = suggested;
                     }
+                    continue;
                 }
 
                 // Check if this shipment is complete

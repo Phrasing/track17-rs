@@ -24,10 +24,10 @@ impl ProxyConfig {
         }
 
         // Extract scheme if present
-        let (scheme, rest) = if proxy.starts_with("https://") {
-            ("https".to_string(), &proxy[8..])
-        } else if proxy.starts_with("http://") {
-            ("http".to_string(), &proxy[7..])
+        let (scheme, rest) = if let Some(rest) = proxy.strip_prefix("https://") {
+            ("https".to_string(), rest)
+        } else if let Some(rest) = proxy.strip_prefix("http://") {
+            ("http".to_string(), rest)
         } else {
             ("http".to_string(), proxy)
         };

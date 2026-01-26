@@ -1719,7 +1719,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "track17-scraper"
+name = "track17-rs"
 version = "0.1.0"
 dependencies = [
  "anyhow",

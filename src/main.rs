@@ -1,7 +1,7 @@
 use std::env;
 
 use anyhow::Result;
-use track17_scraper::{ProxyConfig, Track17Client, carriers, format_location};
+use track17_rs::{ProxyConfig, Track17Client, carriers, format_location};
 
 #[tokio::main]
 async fn main() -> Result<()> {
