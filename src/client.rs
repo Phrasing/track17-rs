@@ -332,18 +332,21 @@ impl Track17Client {
     }
 
     /// Make a single API request for tracking numbers
-    async fn make_request(
-        &self,
-        items: &[TrackingItem],
-        guid: &str,
-    ) -> Result<TrackingResponse> {
+    async fn make_request(&self, items: &[TrackingItem], guid: &str) -> Result<TrackingResponse> {
         let creds = self.credentials.as_ref().unwrap().clone();
 
         // Log request details
         eprintln!(
             "[track17-req] items={:?}, guid={}, sign_len={}, last_event_id_len={}, yq_bid_len={}",
-            items.iter().map(|i| format!("{}:{}", i.num, i.fc)).collect::<Vec<_>>(),
-            if guid.is_empty() { "(empty)" } else { &guid[..guid.len().min(8)] },
+            items
+                .iter()
+                .map(|i| format!("{}:{}", i.num, i.fc))
+                .collect::<Vec<_>>(),
+            if guid.is_empty() {
+                "(empty)"
+            } else {
+                &guid[..guid.len().min(8)]
+            },
             creds.sign.len(),
             creds.last_event_id.len(),
             creds.yq_bid.len(),
@@ -477,18 +480,27 @@ impl Track17Client {
                 "[track17-parsed] meta.code={}, meta.message={}, guid={}, shipments: [{}]",
                 response.meta.code,
                 response.meta.message,
-                if response.guid.is_empty() { "(empty)" } else { &response.guid[..response.guid.len().min(8)] },
-                response.shipments.iter()
+                if response.guid.is_empty() {
+                    "(empty)"
+                } else {
+                    &response.guid[..response.guid.len().min(8)]
+                },
+                response
+                    .shipments
+                    .iter()
                     .map(|s| format!(
                         "{}:code={},has_shipment={},has_events={}",
                         s.number,
                         s.code,
                         s.shipment.is_some(),
-                        s.shipment.as_ref()
-                            .map(|d| d.latest_event.is_some() || d.tracking.as_ref()
-                                .and_then(|t| t.providers.as_ref())
-                                .map(|p| p.iter().any(|prov| !prov.events.is_empty()))
-                                .unwrap_or(false))
+                        s.shipment
+                            .as_ref()
+                            .map(|d| d.latest_event.is_some()
+                                || d.tracking
+                                    .as_ref()
+                                    .and_then(|t| t.providers.as_ref())
+                                    .map(|p| p.iter().any(|prov| !prov.events.is_empty()))
+                                    .unwrap_or(false))
                             .unwrap_or(false)
                     ))
                     .collect::<Vec<_>>()
@@ -498,7 +510,8 @@ impl Track17Client {
             // Handle sign/session expiration - need to re-extract credentials (launches Chrome briefly)
             // Code -11: Invalid sign (signature expired)
             // Code -14: Invalid session (cookies expired, returns empty shipments/guid)
-            if response.meta.code == INVALID_SIGN_CODE || response.meta.code == INVALID_SESSION_CODE {
+            if response.meta.code == INVALID_SIGN_CODE || response.meta.code == INVALID_SESSION_CODE
+            {
                 eprintln!(
                     "Credentials expired (code {}), refreshing...",
                     response.meta.code
@@ -548,7 +561,9 @@ impl Track17Client {
                 // Log retry decision
                 eprintln!(
                     "[track17-retry] pending={}, retry_count={}/{}",
-                    still_pending, pending_retries + 1, MAX_PENDING_RETRIES
+                    still_pending,
+                    pending_retries + 1,
+                    MAX_PENDING_RETRIES
                 );
 
                 if pending_retries >= MAX_PENDING_RETRIES {
