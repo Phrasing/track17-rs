@@ -55,8 +55,8 @@ pub struct ApiCredentials {
 pub struct Track17Client {
     browser: Browser,
     http_client: Client,
-    _handler_task: tokio::task::JoinHandle<()>,
-    _local_proxy_task: Option<tokio::task::JoinHandle<()>>,
+    handler_task: tokio::task::JoinHandle<()>,
+    local_proxy_task: Option<tokio::task::JoinHandle<()>>,
     credentials: Option<ApiCredentials>,
 }
 
@@ -134,10 +134,25 @@ impl Track17Client {
         Ok(Self {
             browser,
             http_client,
-            _handler_task: handler_task,
-            _local_proxy_task: local_proxy_task,
+            handler_task,
+            local_proxy_task,
             credentials: None,
         })
+    }
+
+    /// Close the browser and clean up all resources.
+    /// This method consumes self to prevent use after close.
+    pub async fn close(mut self) -> Result<()> {
+        // Close the browser (sends CDP Browser.close command)
+        self.browser.close().await?;
+
+        // Abort background tasks
+        self.handler_task.abort();
+        if let Some(proxy_task) = self.local_proxy_task {
+            proxy_task.abort();
+        }
+
+        Ok(())
     }
 
     async fn extract_credentials(&mut self, tracking_number: &str) -> Result<ApiCredentials> {
