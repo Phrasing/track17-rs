@@ -44,7 +44,7 @@ host:port
 ## Library Usage
 
 ```rust
-use track17_scraper::{Track17Client, ProxyConfig, carriers};
+use track17_rs::{Track17Client, ProxyConfig, carriers};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
