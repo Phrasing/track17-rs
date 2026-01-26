@@ -1,4 +1,4 @@
-# track17-scraper
+# track17-rs
 
 Rust library and CLI for tracking packages via 17track.net API with full browser fingerprint emulation.
 
