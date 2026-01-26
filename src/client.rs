@@ -392,25 +392,17 @@ impl Track17Client {
 
     /// Check if a shipment needs more polling
     fn shipment_needs_retry(shipment: &Shipment) -> bool {
-        // Code 100 = pending registration
+        // Code 100 = pending registration - always retry
         if shipment.code == PENDING_SHIPMENT_CODE {
             return true;
         }
-        // Code 200 but missing or empty shipment data
+        // Code 200 = success. Only retry if we have no shipment data at all.
+        // Accept shipments even without events - some carriers may not have
+        // event data immediately available, but the shipment is still valid.
         if shipment.code == 200 {
-            match &shipment.shipment {
-                None => return true,
-                Some(details) => {
-                    let has_events = details.latest_event.is_some()
-                        || details
-                            .tracking
-                            .as_ref()
-                            .and_then(|t| t.providers.as_ref())
-                            .map(|p| p.iter().any(|prov| !prov.events.is_empty()))
-                            .unwrap_or(false);
-                    return !has_events;
-                }
-            }
+            // If we have shipment details, accept it (even without events)
+            // Only retry if shipment is completely None
+            return shipment.shipment.is_none();
         }
         false
     }
@@ -456,6 +448,10 @@ impl Track17Client {
 
         // Final results map: number -> shipment
         let mut final_shipments: std::collections::HashMap<String, Shipment> =
+            std::collections::HashMap::new();
+
+        // Store last response for each tracking number (used when max retries exceeded)
+        let mut last_shipments: std::collections::HashMap<String, Shipment> =
             std::collections::HashMap::new();
 
         loop {
@@ -532,6 +528,9 @@ impl Track17Client {
                     continue;
                 }
 
+                // Always store the last response (used as fallback when max retries exceeded)
+                last_shipments.insert(num.clone(), shipment.clone());
+
                 // Check if this shipment is complete
                 if !Self::shipment_needs_retry(&shipment) {
                     final_shipments.insert(num, shipment);
@@ -552,33 +551,44 @@ impl Track17Client {
                 );
 
                 if pending_retries >= MAX_PENDING_RETRIES {
-                    // Max retries reached, add remaining as-is
-                    eprintln!("Max retries reached, returning partial results");
+                    // Max retries reached, use last response data instead of placeholders
+                    eprintln!("Max retries reached, accepting last response data for remaining packages");
                     for item in &items {
                         if !final_shipments.contains_key(&item.num) {
-                            // Create a placeholder shipment
-                            final_shipments.insert(
-                                item.num.clone(),
-                                Shipment {
-                                    code: PENDING_SHIPMENT_CODE,
-                                    number: item.num.clone(),
-                                    carrier: item.fc,
-                                    carrier_final: None,
-                                    param: None,
-                                    params: None,
-                                    params_v2: None,
-                                    extra: None,
-                                    shipment: None,
-                                    pre_status: None,
-                                    prior_status: None,
-                                    state: None,
-                                    state_final: None,
-                                    service_type: None,
-                                    service_type_final: None,
-                                    key: None,
-                                    show_more: false,
-                                },
-                            );
+                            // Use last response if available, otherwise create placeholder
+                            if let Some(last_shipment) = last_shipments.remove(&item.num) {
+                                eprintln!(
+                                    "Accepting incomplete data for {}: code={}, has_shipment={}",
+                                    item.num,
+                                    last_shipment.code,
+                                    last_shipment.shipment.is_some()
+                                );
+                                final_shipments.insert(item.num.clone(), last_shipment);
+                            } else {
+                                // No response at all - create placeholder
+                                final_shipments.insert(
+                                    item.num.clone(),
+                                    Shipment {
+                                        code: PENDING_SHIPMENT_CODE,
+                                        number: item.num.clone(),
+                                        carrier: item.fc,
+                                        carrier_final: None,
+                                        param: None,
+                                        params: None,
+                                        params_v2: None,
+                                        extra: None,
+                                        shipment: None,
+                                        pre_status: None,
+                                        prior_status: None,
+                                        state: None,
+                                        state_final: None,
+                                        service_type: None,
+                                        service_type_final: None,
+                                        key: None,
+                                        show_more: false,
+                                    },
+                                );
+                            }
                         }
                     }
                     break;
