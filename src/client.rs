@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -12,6 +13,7 @@ use chaser_oxide::{
     profiles::ChaserProfile,
 };
 use futures::StreamExt;
+use tokio::sync::Mutex;
 use tokio::time::timeout;
 use wreq::{Client, header};
 use wreq_util::Emulation;
@@ -64,12 +66,17 @@ pub struct Track17Config {
     pub skip_process_optimization: bool,
 }
 
+/// Track17 client that uses Chrome only for credential extraction.
+///
+/// Chrome is launched briefly to extract API credentials (sign, cookies),
+/// then immediately closed. Subsequent tracking requests use HTTP only.
+/// Chrome is only relaunched when credentials expire (API returns code -11).
 pub struct Track17Client {
-    browser: Browser,
     http_client: Client,
-    handler_task: tokio::task::JoinHandle<()>,
-    local_proxy_task: Option<tokio::task::JoinHandle<()>>,
+    config: Track17Config,
     credentials: Option<ApiCredentials>,
+    /// Mutex to prevent concurrent Chrome launches during credential extraction
+    credential_mutex: Arc<Mutex<()>>,
 }
 
 impl Track17Client {
@@ -86,63 +93,6 @@ impl Track17Client {
     }
 
     pub async fn with_config(config: Track17Config) -> Result<Self> {
-        let mut browser_config = BrowserConfig::builder().new_headless_mode().incognito();
-
-        // Add process-reducing flags unless explicitly skipped
-        if !config.skip_process_optimization {
-            browser_config = browser_config
-                .arg("--disable-gpu")
-                .arg("--disable-dev-shm-usage")
-                .arg("--disable-software-rasterizer")
-                .arg("--disable-extensions")
-                .arg("--disable-background-networking")
-                .arg("--disable-sync")
-                .arg("--disable-translate")
-                .arg("--metrics-recording-only")
-                .arg("--no-first-run")
-                .arg("--mute-audio");
-        }
-
-        // Chrome path: config takes precedence over env var
-        if let Some(ref chrome_path) = config.chrome_path {
-            browser_config = browser_config.chrome_executable(chrome_path);
-        } else if let Ok(chrome_path) = std::env::var("CHROME_PATH") {
-            browser_config = browser_config.chrome_executable(chrome_path);
-        }
-
-        // Configure browser proxy - use local proxy for authenticated upstreams
-        let mut local_proxy_task = None;
-        if let Some(ref proxy) = config.proxy {
-            let browser_proxy = if proxy.username.is_some() {
-                // Start local proxy for authenticated upstream
-                let local_proxy = LocalProxy::start(proxy.clone()).await?;
-                let local_addr = local_proxy.local_addr();
-                eprintln!(
-                    "Using proxy: {} (via local {})",
-                    proxy.to_host_port(),
-                    local_addr
-                );
-                local_proxy_task = Some(local_proxy.run());
-                local_addr
-            } else {
-                // Direct proxy (no auth needed)
-                eprintln!("Using proxy: {}", proxy.to_host_port());
-                proxy.to_host_port()
-            };
-            let proxy_server = format!("--proxy-server={}", browser_proxy);
-            browser_config = browser_config.arg(proxy_server);
-        }
-
-        let browser_config = browser_config
-            .build()
-            .map_err(|e| anyhow::anyhow!("Failed to build browser config: {}", e))?;
-
-        let (browser, mut handler) = Browser::launch(browser_config)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to launch browser: {}", e))?;
-
-        let handler_task = tokio::spawn(async move { while handler.next().await.is_some() {} });
-
         // Build HTTP client with optional proxy
         let mut http_builder = Client::builder()
             .emulation(Emulation::Chrome143)
@@ -169,31 +119,127 @@ impl Track17Client {
         }
 
         Ok(Self {
-            browser,
             http_client,
-            handler_task,
-            local_proxy_task,
+            config,
             credentials: None,
+            credential_mutex: Arc::new(Mutex::new(())),
         })
     }
 
-    /// Close the browser and clean up all resources.
-    /// This method consumes self to prevent use after close.
-    pub async fn close(mut self) -> Result<()> {
-        // Close the browser (sends CDP Browser.close command)
-        self.browser.close().await?;
-
-        // Abort background tasks
-        self.handler_task.abort();
-        if let Some(proxy_task) = self.local_proxy_task {
-            proxy_task.abort();
-        }
-
+    /// Close the client and clean up resources.
+    /// Since Chrome is closed immediately after credential extraction,
+    /// this method mainly exists for API compatibility.
+    pub async fn close(self) -> Result<()> {
+        // Nothing to close - Chrome is not kept alive
         Ok(())
     }
 
+    /// Build browser configuration with optional proxy
+    fn build_browser_config_with_proxy(&self, proxy_addr: Option<&str>) -> Result<BrowserConfig> {
+        let mut builder = BrowserConfig::builder().new_headless_mode().incognito();
+
+        // Add proxy if provided
+        if let Some(addr) = proxy_addr {
+            builder = builder.arg(format!("--proxy-server={}", addr));
+        }
+
+        // Add process-reducing flags unless explicitly skipped
+        if !self.config.skip_process_optimization {
+            builder = builder
+                .arg("--disable-gpu")
+                .arg("--disable-dev-shm-usage")
+                .arg("--disable-software-rasterizer")
+                .arg("--disable-extensions")
+                .arg("--disable-background-networking")
+                .arg("--disable-sync")
+                .arg("--disable-translate")
+                .arg("--metrics-recording-only")
+                .arg("--no-first-run")
+                .arg("--mute-audio");
+        }
+
+        // Chrome path: config takes precedence over env var
+        if let Some(ref chrome_path) = self.config.chrome_path {
+            builder = builder.chrome_executable(chrome_path);
+        } else if let Ok(chrome_path) = std::env::var("CHROME_PATH") {
+            builder = builder.chrome_executable(chrome_path);
+        }
+
+        builder
+            .build()
+            .map_err(|e| anyhow::anyhow!("Failed to build browser config: {}", e))
+    }
+
+    /// Extract credentials by launching Chrome, navigating to 17track, and closing Chrome.
+    /// This method serializes concurrent calls to prevent multiple Chrome launches.
     async fn extract_credentials(&mut self, tracking_number: &str) -> Result<ApiCredentials> {
-        let page = self.browser.new_page("about:blank").await?;
+        // Acquire mutex to prevent concurrent Chrome launches
+        let _lock = self.credential_mutex.lock().await;
+
+        // Double-check if another call already extracted credentials
+        if let Some(ref creds) = self.credentials {
+            return Ok(creds.clone());
+        }
+
+        eprintln!("Launching Chrome to extract credentials...");
+
+        // Handle proxy configuration
+        let mut local_proxy_task = None;
+        let browser_config = if let Some(ref proxy) = self.config.proxy {
+            if proxy.username.is_some() {
+                // Start local proxy for authenticated upstream
+                let local_proxy = LocalProxy::start(proxy.clone()).await?;
+                let local_addr = local_proxy.local_addr();
+                eprintln!(
+                    "Using proxy: {} (via local {})",
+                    proxy.to_host_port(),
+                    local_addr
+                );
+                local_proxy_task = Some(local_proxy.run());
+                self.build_browser_config_with_proxy(Some(&local_addr))?
+            } else {
+                // Direct proxy (no auth needed)
+                eprintln!("Using proxy: {}", proxy.to_host_port());
+                self.build_browser_config_with_proxy(Some(&proxy.to_host_port()))?
+            }
+        } else {
+            // No proxy
+            self.build_browser_config_with_proxy(None)?
+        };
+
+        // Launch browser
+        let (mut browser, mut handler) = Browser::launch(browser_config)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to launch browser: {}", e))?;
+
+        let handler_task = tokio::spawn(async move { while handler.next().await.is_some() {} });
+
+        // Extract credentials
+        let result = self.do_extract_credentials(&browser, tracking_number).await;
+
+        // ALWAYS close browser, even on error
+        eprintln!("Closing Chrome...");
+        if let Err(e) = browser.close().await {
+            eprintln!("Warning: Failed to close browser: {}", e);
+        }
+        handler_task.abort();
+        if let Some(proxy_task) = local_proxy_task {
+            proxy_task.abort();
+        }
+        eprintln!("Chrome closed");
+
+        let credentials = result?;
+        self.credentials = Some(credentials.clone());
+        Ok(credentials)
+    }
+
+    /// Internal credential extraction logic (browser already launched)
+    async fn do_extract_credentials(
+        &self,
+        browser: &Browser,
+        tracking_number: &str,
+    ) -> Result<ApiCredentials> {
+        let page = browser.new_page("about:blank").await?;
         let chaser = ChaserPage::new(page.clone());
 
         let profile = ChaserProfile::windows().build();
@@ -263,13 +309,16 @@ impl Track17Client {
         let yq_bid = cookies["yqBid"].as_str().unwrap_or("").to_string();
 
         eprintln!("Credentials captured!");
-        let credentials = ApiCredentials {
+        Ok(ApiCredentials {
             sign,
             last_event_id,
             yq_bid,
-        };
-        self.credentials = Some(credentials.clone());
-        Ok(credentials)
+        })
+    }
+
+    /// Clear cached credentials, forcing re-extraction on next request
+    pub fn clear_credentials(&mut self) {
+        self.credentials = None;
     }
 
     pub async fn track(
@@ -283,7 +332,7 @@ impl Track17Client {
 
     /// Make a single API request for tracking numbers
     async fn make_request(
-        &mut self,
+        &self,
         items: &[TrackingItem],
         guid: &str,
     ) -> Result<TrackingResponse> {
@@ -368,7 +417,7 @@ impl Track17Client {
         tracking_numbers: &[String],
         carrier_code: u32,
     ) -> Result<TrackingResponse> {
-        // Get credentials, extracting if needed
+        // Get credentials, extracting if needed (launches Chrome briefly)
         if self.credentials.is_none() {
             self.extract_credentials(&tracking_numbers[0]).await?;
         }
@@ -404,7 +453,7 @@ impl Track17Client {
 
             let response = self.make_request(&pending_items, &session_guid).await?;
 
-            // Handle sign expiration
+            // Handle sign expiration - need to re-extract credentials (launches Chrome briefly)
             if response.meta.code == INVALID_SIGN_CODE {
                 eprintln!("Sign expired, refreshing credentials...");
                 self.credentials = None;
