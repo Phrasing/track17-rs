@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -52,6 +53,17 @@ pub struct ApiCredentials {
     pub yq_bid: String,
 }
 
+/// Configuration for Track17Client
+#[derive(Debug, Clone, Default)]
+pub struct Track17Config {
+    /// Proxy configuration
+    pub proxy: Option<ProxyConfig>,
+    /// Custom Chrome executable path (overrides CHROME_PATH env var)
+    pub chrome_path: Option<PathBuf>,
+    /// Skip process-reducing Chrome flags (not recommended)
+    pub skip_process_optimization: bool,
+}
+
 pub struct Track17Client {
     browser: Browser,
     http_client: Client,
@@ -62,20 +74,45 @@ pub struct Track17Client {
 
 impl Track17Client {
     pub async fn new() -> Result<Self> {
-        Self::with_proxy(None).await
+        Self::with_config(Track17Config::default()).await
     }
 
     pub async fn with_proxy(proxy: Option<ProxyConfig>) -> Result<Self> {
-        let mut config_builder = BrowserConfig::builder().new_headless_mode().incognito();
+        Self::with_config(Track17Config {
+            proxy,
+            ..Default::default()
+        })
+        .await
+    }
 
-        // Allow custom Chrome path via CHROME_PATH env var
-        if let Ok(chrome_path) = std::env::var("CHROME_PATH") {
-            config_builder = config_builder.chrome_executable(chrome_path);
+    pub async fn with_config(config: Track17Config) -> Result<Self> {
+        let mut browser_config = BrowserConfig::builder().new_headless_mode().incognito();
+
+        // Add process-reducing flags unless explicitly skipped
+        if !config.skip_process_optimization {
+            browser_config = browser_config
+                .arg("--disable-gpu")
+                .arg("--disable-dev-shm-usage")
+                .arg("--disable-software-rasterizer")
+                .arg("--disable-extensions")
+                .arg("--disable-background-networking")
+                .arg("--disable-sync")
+                .arg("--disable-translate")
+                .arg("--metrics-recording-only")
+                .arg("--no-first-run")
+                .arg("--mute-audio");
+        }
+
+        // Chrome path: config takes precedence over env var
+        if let Some(ref chrome_path) = config.chrome_path {
+            browser_config = browser_config.chrome_executable(chrome_path);
+        } else if let Ok(chrome_path) = std::env::var("CHROME_PATH") {
+            browser_config = browser_config.chrome_executable(chrome_path);
         }
 
         // Configure browser proxy - use local proxy for authenticated upstreams
         let mut local_proxy_task = None;
-        if let Some(ref proxy) = proxy {
+        if let Some(ref proxy) = config.proxy {
             let browser_proxy = if proxy.username.is_some() {
                 // Start local proxy for authenticated upstream
                 let local_proxy = LocalProxy::start(proxy.clone()).await?;
@@ -93,14 +130,14 @@ impl Track17Client {
                 proxy.to_host_port()
             };
             let proxy_server = format!("--proxy-server={}", browser_proxy);
-            config_builder = config_builder.arg(proxy_server);
+            browser_config = browser_config.arg(proxy_server);
         }
 
-        let config = config_builder
+        let browser_config = browser_config
             .build()
             .map_err(|e| anyhow::anyhow!("Failed to build browser config: {}", e))?;
 
-        let (browser, mut handler) = Browser::launch(config)
+        let (browser, mut handler) = Browser::launch(browser_config)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to launch browser: {}", e))?;
 
@@ -114,7 +151,7 @@ impl Track17Client {
             .brotli(true)
             .zstd(true);
 
-        if let Some(ref proxy) = proxy {
+        if let Some(ref proxy) = config.proxy {
             let proxy_url = proxy.to_url();
             http_builder = http_builder.proxy(wreq::Proxy::all(&proxy_url)?);
         }
@@ -122,7 +159,7 @@ impl Track17Client {
         let http_client = http_builder.build()?;
 
         // Verify proxy by checking external IP
-        if proxy.is_some()
+        if config.proxy.is_some()
             && let Ok(resp) = http_client.get("https://httpbin.org/ip").send().await
             && let Ok(body) = resp.text().await
             && let Ok(json) = serde_json::from_str::<serde_json::Value>(&body)
