@@ -567,7 +567,9 @@ impl Track17Client {
 
                 if pending_retries >= MAX_PENDING_RETRIES {
                     // Max retries reached, use last response data instead of placeholders
-                    eprintln!("Max retries reached, accepting last response data for remaining packages");
+                    eprintln!(
+                        "Max retries reached, accepting last response data for remaining packages"
+                    );
                     for item in &items {
                         if !final_shipments.contains_key(&item.num) {
                             // Use last response if available, otherwise create placeholder
