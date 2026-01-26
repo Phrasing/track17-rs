@@ -6,5 +6,5 @@ pub mod zipcode;
 
 pub use client::Track17Client;
 pub use proxy::ProxyConfig;
-pub use types::{carriers, Meta, Shipment, TrackingItem, TrackingResponse, TrackingState};
+pub use types::{Meta, Shipment, TrackingItem, TrackingResponse, TrackingState, carriers};
 pub use zipcode::format_location;

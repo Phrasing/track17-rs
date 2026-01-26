@@ -17,7 +17,7 @@ use wreq_util::Emulation;
 
 use crate::local_proxy::LocalProxy;
 use crate::proxy::ProxyConfig;
-use crate::types::{TrackingItem, TrackingRequest, TrackingResponse, Shipment, carriers};
+use crate::types::{Shipment, TrackingItem, TrackingRequest, TrackingResponse, carriers};
 
 const API_URL: &str = "https://t.17track.net/track/restapi";
 
@@ -66,9 +66,7 @@ impl Track17Client {
     }
 
     pub async fn with_proxy(proxy: Option<ProxyConfig>) -> Result<Self> {
-        let mut config_builder = BrowserConfig::builder()
-            .new_headless_mode()
-            .incognito();
+        let mut config_builder = BrowserConfig::builder().new_headless_mode().incognito();
 
         // Allow custom Chrome path via CHROME_PATH env var
         if let Ok(chrome_path) = std::env::var("CHROME_PATH") {
@@ -82,7 +80,11 @@ impl Track17Client {
                 // Start local proxy for authenticated upstream
                 let local_proxy = LocalProxy::start(proxy.clone()).await?;
                 let local_addr = local_proxy.local_addr();
-                eprintln!("Using proxy: {} (via local {})", proxy.to_host_port(), local_addr);
+                eprintln!(
+                    "Using proxy: {} (via local {})",
+                    proxy.to_host_port(),
+                    local_addr
+                );
                 local_proxy_task = Some(local_proxy.run());
                 local_addr
             } else {
@@ -271,8 +273,7 @@ impl Track17Client {
             anyhow::bail!("API request failed: {} {}", status, body);
         }
 
-        serde_json::from_str(&body)
-            .map_err(|e| anyhow::anyhow!("Failed to parse response: {}", e))
+        serde_json::from_str(&body).map_err(|e| anyhow::anyhow!("Failed to parse response: {}", e))
     }
 
     /// Check if a shipment needs more polling

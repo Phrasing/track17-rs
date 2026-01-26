@@ -98,7 +98,10 @@ impl ProxyConfig {
     pub fn to_url(&self) -> String {
         match (&self.username, &self.password) {
             (Some(user), Some(pass)) => {
-                format!("{}://{}:{}@{}:{}", self.scheme, user, pass, self.host, self.port)
+                format!(
+                    "{}://{}:{}@{}:{}",
+                    self.scheme, user, pass, self.host, self.port
+                )
             }
             _ => format!("{}://{}:{}", self.scheme, self.host, self.port),
         }

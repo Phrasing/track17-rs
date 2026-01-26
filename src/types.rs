@@ -207,10 +207,14 @@ impl TrackingEvent {
             Some(LocationData::Structured(loc)) => {
                 let city = loc.city.as_deref().filter(|s| !s.is_empty());
                 let state = loc.state.as_deref().filter(|s| !s.is_empty());
-                let country = loc.country.as_deref()
+                let country = loc
+                    .country
+                    .as_deref()
                     .or(loc.country_code.as_deref())
                     .filter(|s| !s.is_empty());
-                let postal = loc.postal_code.as_deref()
+                let postal = loc
+                    .postal_code
+                    .as_deref()
                     .or(loc.postal_code_alt.as_deref())
                     .or(loc.zip_code.as_deref())
                     .filter(|s| !s.is_empty());
@@ -221,12 +225,10 @@ impl TrackingEvent {
                     (Some(c), None, None) => Some(c.to_string()),
                     (None, Some(s), Some(p)) => Some(format!("{} {}", s, p)),
                     (None, Some(s), None) => Some(s.to_string()),
-                    (None, None, Some(p)) => {
-                        match country {
-                            Some(co) => Some(format!("{} {}", co, p)),
-                            None => Some(p.to_string()),
-                        }
-                    }
+                    (None, None, Some(p)) => match country {
+                        Some(co) => Some(format!("{} {}", co, p)),
+                        None => Some(p.to_string()),
+                    },
                     _ => loc.address.clone(),
                 }
             }
@@ -244,7 +246,6 @@ impl TrackingEvent {
             None
         }
     }
-
 }
 
 /// Metadata in the response

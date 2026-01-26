@@ -1,7 +1,7 @@
 use std::env;
 
 use anyhow::Result;
-use track17_scraper::{carriers, format_location, ProxyConfig, Track17Client};
+use track17_scraper::{ProxyConfig, Track17Client, carriers, format_location};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -43,7 +43,10 @@ async fn main() -> Result<()> {
     let proxy = args.get(3).and_then(|s| {
         let config = ProxyConfig::parse(s);
         if config.is_none() {
-            eprintln!("Warning: Failed to parse proxy '{}', continuing without proxy", s);
+            eprintln!(
+                "Warning: Failed to parse proxy '{}', continuing without proxy",
+                s
+            );
         }
         config
     });
@@ -51,7 +54,9 @@ async fn main() -> Result<()> {
     let mut client = Track17Client::with_proxy(proxy).await?;
 
     println!("Tracking {} package(s)...", tracking_numbers.len());
-    let response = client.track_multiple(&tracking_numbers, carrier_code).await?;
+    let response = client
+        .track_multiple(&tracking_numbers, carrier_code)
+        .await?;
 
     println!("Status: {} - {}", response.meta.code, response.meta.message);
 
@@ -61,7 +66,9 @@ async fn main() -> Result<()> {
         if let Some(details) = &shipment.shipment {
             // Try latest_event first, then fall back to tracking providers
             let latest = details.latest_event.as_ref().or_else(|| {
-                details.tracking.as_ref()
+                details
+                    .tracking
+                    .as_ref()
                     .and_then(|t| t.providers.as_ref())
                     .and_then(|p| p.first())
                     .and_then(|p| p.events.first())
@@ -69,13 +76,17 @@ async fn main() -> Result<()> {
 
             if let Some(event) = latest {
                 let state = event.tracking_state();
-                let time = event.time_iso.as_deref()
+                let time = event
+                    .time_iso
+                    .as_deref()
                     .or(event.time.as_deref())
                     .unwrap_or("N/A");
                 println!("  Status: {}", state);
-                println!("  Latest: {} - {}",
+                println!(
+                    "  Latest: {} - {}",
                     time,
-                    event.description.as_deref().unwrap_or("N/A"));
+                    event.description.as_deref().unwrap_or("N/A")
+                );
                 if let Some(raw_loc) = event.raw_location() {
                     let location = format_location(&raw_loc);
                     println!("  Location: {}", location);

@@ -116,12 +116,8 @@ async fn handle_connection(mut client: TcpStream, upstream: &ProxyConfig) -> any
     let (mut client_read, mut client_write) = client.into_split();
     let (mut upstream_read, mut upstream_write) = upstream_stream.into_split();
 
-    let client_to_upstream = async {
-        tokio::io::copy(&mut client_read, &mut upstream_write).await
-    };
-    let upstream_to_client = async {
-        tokio::io::copy(&mut upstream_read, &mut client_write).await
-    };
+    let client_to_upstream = async { tokio::io::copy(&mut client_read, &mut upstream_write).await };
+    let upstream_to_client = async { tokio::io::copy(&mut upstream_read, &mut client_write).await };
 
     tokio::select! {
         _ = client_to_upstream => {}
