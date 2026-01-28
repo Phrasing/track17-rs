@@ -1,7 +1,7 @@
 /// Look up city and state from a US zip code
 pub fn lookup_zipcode(zip: &str) -> Option<(String, String)> {
     // Avoid zipcodes::matching to suppress debug_print output.
-    let results = zipcodes::filter_by(vec![|z| z.zip_code == zip], None).ok()?;
+    let results = zipcodes::filter_by(vec![|z: &zipcodes::Zipcode| z.zip_code == zip], None).ok()?;
     let info = results.first()?;
     Some((info.city.clone(), info.state.clone()))
 }
