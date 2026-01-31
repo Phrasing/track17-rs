@@ -49,7 +49,7 @@ pub struct Track17Config {
 /// # Example
 ///
 /// ```no_run
-/// use tracking_public_api::{Track17Client, carriers};
+/// use track17_rs::{Track17Client, carriers};
 ///
 /// #[tokio::main]
 /// async fn main() -> anyhow::Result<()> {

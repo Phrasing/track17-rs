@@ -34,20 +34,23 @@ use crate::yq_bid;
 /// # Example
 ///
 /// ```no_run
-/// use tracking_public_api::CredentialCache;
+/// use track17_rs::CredentialCache;
 /// use wreq::Client;
 ///
-/// let cache = CredentialCache::new();
-/// let client = Client::builder().build().unwrap();
+/// #[tokio::main]
+/// async fn main() {
+///     let cache = CredentialCache::new();
+///     let client = Client::builder().build().unwrap();
 ///
-/// // Fast path: read lock (if credentials are valid)
-/// if let Some(creds) = cache.get_valid_credentials().await {
-///     println!("Using cached credentials");
+///     // Fast path: read lock (if credentials are valid)
+///     if let Some(creds) = cache.get_valid_credentials().await {
+///         println!("Using cached credentials");
+///     }
+///
+///     // Slow path: write lock (if credentials expired)
+///     let creds = cache.refresh_credentials(&client).await.unwrap();
+///     println!("Generated fresh credentials");
 /// }
-///
-/// // Slow path: write lock (if credentials expired)
-/// let creds = cache.refresh_credentials(&client).await.unwrap();
-/// println!("Generated fresh credentials");
 /// ```
 #[derive(Clone)]
 pub struct CredentialCache {
