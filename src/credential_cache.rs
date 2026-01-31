@@ -86,15 +86,14 @@ impl CredentialCache {
         let cache = self.inner.read().await;
 
         // Check if credentials are still valid
-        if let Some(ref creds) = cache.credentials {
-            if cache
+        if let Some(ref creds) = cache.credentials
+            && cache
                 .cached_assets
                 .as_ref()
                 .map(|a| a.is_fresh())
                 .unwrap_or(false)
-            {
-                return Some(creds.clone());
-            }
+        {
+            return Some(creds.clone());
         }
 
         None
@@ -117,16 +116,15 @@ impl CredentialCache {
             let cache = self.inner.write().await;
 
             // Double-check: another thread may have regenerated while we waited
-            if let Some(ref creds) = cache.credentials {
-                if cache
+            if let Some(ref creds) = cache.credentials
+                && cache
                     .cached_assets
                     .as_ref()
                     .map(|a| a.is_fresh())
                     .unwrap_or(false)
-                {
-                    eprintln!("[credential_cache] Another thread already refreshed credentials");
-                    return Ok(creds.clone());
-                }
+            {
+                eprintln!("[credential_cache] Another thread already refreshed credentials");
+                return Ok(creds.clone());
             }
 
             eprintln!("[credential_cache] Refreshing credentials...");
@@ -172,16 +170,15 @@ impl CredentialCache {
             use futures::executor::block_on;
 
             eprintln!("[credential_cache] Creating fresh V8 runtime...");
-            let mut generator =
-                SignGenerator::new().context("Failed to create V8 runtime")?;
+            let mut generator = SignGenerator::new().context("Failed to create V8 runtime")?;
 
             eprintln!("[credential_cache] Initializing V8 runtime...");
             block_on(generator.initialize(&sign_module_js))
                 .context("Failed to initialize sign module in V8")?;
 
             eprintln!("[credential_cache] Generating sign...");
-            let sign = block_on(generator.generate_sign())
-                .context("Failed to generate sign from V8")?;
+            let sign =
+                block_on(generator.generate_sign()).context("Failed to generate sign from V8")?;
 
             if sign.is_empty() {
                 anyhow::bail!("V8 returned empty sign");

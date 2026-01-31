@@ -1,24 +1,24 @@
 use std::env;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use anyhow::{Context, Result};
 use axum::{
+    Router,
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Json, Response},
     routing::{get, post},
-    Router,
 };
 use serde::{Deserialize, Serialize};
 use tower::ServiceBuilder;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use track17_rs::{carriers, format_location, Track17Client, Shipment};
 use track17_rs::types::TrackingEvent;
+use track17_rs::{Shipment, Track17Client, carriers, format_location};
 
 /// Server configuration
 struct ServerConfig {
@@ -146,10 +146,7 @@ async fn track_single(
     Json(request): Json<TrackRequest>,
 ) -> Result<Json<TrackResponse>, ApiError> {
     // Increment metrics
-    state
-        .metrics
-        .total_requests
-        .fetch_add(1, Ordering::Relaxed);
+    state.metrics.total_requests.fetch_add(1, Ordering::Relaxed);
     state
         .metrics
         .requests_in_flight
@@ -177,9 +174,10 @@ async fn track_single(
         })?;
 
     // Transform response
-    let shipment = response.shipments.first().ok_or_else(|| {
-        ApiError::NotFound("No tracking data found for this package".to_string())
-    })?;
+    let shipment = response
+        .shipments
+        .first()
+        .ok_or_else(|| ApiError::NotFound("No tracking data found for this package".to_string()))?;
 
     Ok(Json(TrackResponse {
         success: true,
@@ -205,10 +203,7 @@ async fn track_batch(
     State(state): State<AppState>,
     Json(request): Json<BatchTrackRequest>,
 ) -> Result<Json<BatchTrackResponse>, ApiError> {
-    state
-        .metrics
-        .total_requests
-        .fetch_add(1, Ordering::Relaxed);
+    state.metrics.total_requests.fetch_add(1, Ordering::Relaxed);
     state
         .metrics
         .requests_in_flight
@@ -268,10 +263,7 @@ struct BatchTrackResponse {
 async fn get_metrics(State(state): State<AppState>) -> Json<MetricsResponse> {
     Json(MetricsResponse {
         total_requests: state.metrics.total_requests.load(Ordering::Relaxed),
-        requests_in_flight: state
-            .metrics
-            .requests_in_flight
-            .load(Ordering::Relaxed),
+        requests_in_flight: state.metrics.requests_in_flight.load(Ordering::Relaxed),
         uptime_seconds: state.metrics.start_time.elapsed().as_secs(),
     })
 }
@@ -350,7 +342,9 @@ impl EventData {
                 .description
                 .clone()
                 .unwrap_or_else(|| "N/A".to_string()),
-            location: event.raw_location().map(|loc| format_location(loc.as_str())),
+            location: event
+                .raw_location()
+                .map(|loc| format_location(loc.as_str())),
         }
     }
 }

@@ -9,7 +9,6 @@
 /// ```bash
 /// cargo run --example api_client
 /// ```
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
@@ -27,12 +26,14 @@ struct BatchTrackRequest {
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct TrackResponse {
     success: bool,
     data: TrackData,
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct BatchTrackResponse {
     success: bool,
     data: Vec<TrackData>,
@@ -129,12 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         carrier_code: None,
     };
 
-    match client
-        .post(&batch_url)
-        .json(&batch_request)
-        .send()
-        .await
-    {
+    match client.post(&batch_url).json(&batch_request).send().await {
         Ok(response) => {
             if response.status().is_success() {
                 let result: BatchTrackResponse = response.json().await?;
