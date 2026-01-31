@@ -19,6 +19,8 @@ target
 #.idea/
 
 *.js
+# But don't ignore our embedded runtime JS!
+!src/js_runtime/*.js
 *.har
 *.html
 
