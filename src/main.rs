@@ -51,7 +51,7 @@ async fn main() -> Result<()> {
         config
     });
 
-    let mut client = Track17Client::with_proxy(proxy).await?;
+    let client = Track17Client::with_proxy(proxy).await?;
 
     println!("Tracking {} package(s)...", tracking_numbers.len());
     let response = client

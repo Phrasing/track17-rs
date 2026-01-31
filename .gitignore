@@ -20,6 +20,10 @@ target
 
 *.js
 *.har
+*.html
+
+# Claude Code
+.claude/
 
 .DS_Store
 
