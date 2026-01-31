@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  track17-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: track17-server:latest
+    container_name: track17-server
+
+    # Restart policy for production
+    restart: unless-stopped
+
+    # Port mapping
+    ports:
+      - "${HOST_PORT:-3000}:3000"
+
+    # Environment variables
+    environment:
+      - PORT=3000
+      - RUST_LOG=${RUST_LOG:-info}
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  default:
+    driver: bridge

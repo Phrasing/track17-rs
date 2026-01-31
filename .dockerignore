@@ -1,0 +1,46 @@
+# Build outputs
+target/
+debug/
+**/*.rs.bk
+
+# Git
+.git/
+.gitignore
+.github/
+
+# Documentation
+*.md
+docs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+*.env
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+tests/
+*.test
+*.spec
+
+# Examples
+examples/
+
+# Misc
+*.har
+*.html
+mutants.out*/
+.claude/

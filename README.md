@@ -143,6 +143,200 @@ Response:
 - `PORT` - Server port (default: 3000)
 - `RUST_LOG` - Log level: error, warn, info, debug, trace (default: info)
 
+## Docker Deployment
+
+### Quick Start
+
+Build and run with Docker Compose:
+
+```bash
+# Start the server
+docker-compose up -d
+
+# Check logs
+docker-compose logs -f track17-server
+
+# Stop the server
+docker-compose down
+```
+
+Access the API:
+```bash
+# Health check
+curl http://localhost:3000/health
+
+# Get metrics
+curl http://localhost:3000/api/metrics
+```
+
+### Docker Build
+
+Build the image manually:
+
+```bash
+docker build -t track17-server:latest .
+```
+
+Run the container:
+
+```bash
+docker run -d \
+  --name track17-server \
+  -p 3000:3000 \
+  -e RUST_LOG=info \
+  track17-server:latest
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | 3000 | Server listening port |
+| `RUST_LOG` | info | Log level (error, warn, info, debug, trace) |
+| `HOST_PORT` | 3000 | Host port mapping (docker-compose only) |
+
+### Production Deployment
+
+#### Resource Requirements
+
+- **Build Time:** 5-8 minutes (first build), 1-2 minutes (cached)
+- **Build Memory:** 2GB+ RAM recommended
+- **Runtime Memory:** 256-512MB typical, 1GB recommended with headroom
+- **Image Size:** ~200-250MB (compressed)
+- **CPU:** 0.5-1.0 core typical load
+
+#### Health Checks
+
+Docker includes automated health checks on `/health` endpoint:
+
+```bash
+# Check container health
+docker inspect --format='{{.State.Health.Status}}' track17-server
+
+# Manual health check
+curl http://localhost:3000/health
+```
+
+Expected response:
+```json
+{
+  "status": "healthy",
+  "version": "0.1.0"
+}
+```
+
+#### Monitoring
+
+Monitor the `/api/metrics` endpoint:
+
+```bash
+curl http://localhost:3000/api/metrics
+```
+
+Response:
+```json
+{
+  "total_requests": 1234,
+  "requests_in_flight": 5,
+  "uptime_seconds": 86400
+}
+```
+
+#### Graceful Shutdown
+
+The server handles SIGTERM signals gracefully:
+
+```bash
+# Graceful shutdown (10 second timeout)
+docker stop track17-server
+
+# Custom timeout (30 seconds)
+docker stop -t 30 track17-server
+```
+
+### Troubleshooting
+
+#### Build Issues
+
+**Problem:** V8 compilation fails or runs out of memory
+
+**Solution:** Increase Docker memory limit to 4GB+ in Docker Desktop settings:
+
+```bash
+docker build --memory=4g -t track17-server:latest .
+```
+
+**Problem:** Git dependencies fail to fetch
+
+**Solution:** Ensure Docker has network access. If behind a proxy, use build args:
+
+```bash
+docker build \
+  --build-arg HTTP_PROXY=http://proxy:8080 \
+  --build-arg HTTPS_PROXY=http://proxy:8080 \
+  -t track17-server:latest .
+```
+
+#### Runtime Issues
+
+**Problem:** Container exits immediately
+
+**Solution:** Check logs for errors:
+
+```bash
+docker logs track17-server
+```
+
+**Problem:** Cannot connect to 17track.net from container
+
+**Solution:** Verify network connectivity:
+
+```bash
+docker exec track17-server curl -I https://17track.net
+```
+
+### Security
+
+1. **Non-root User:** Container runs as `appuser` (UID 1000)
+2. **Minimal Base:** Debian slim reduces attack surface
+3. **No Privileged Access:** Container doesn't require elevated privileges
+4. **Security Scanning:** Scan regularly with Trivy:
+   ```bash
+   docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+     aquasec/trivy image track17-server:latest
+   ```
+
+### Advanced Configuration
+
+#### Custom Port Mapping
+
+```bash
+# Use custom host port
+HOST_PORT=8080 docker-compose up -d
+```
+
+#### Debug Logging
+
+```bash
+# Enable debug logging
+RUST_LOG=debug docker-compose up -d
+```
+
+#### Override docker-compose
+
+Create `docker-compose.override.yml` for local development:
+
+```yaml
+version: '3.8'
+
+services:
+  track17-server:
+    environment:
+      - RUST_LOG=debug
+    ports:
+      - "8080:3000"
+```
+
 ## Library Usage
 
 ### Basic Usage
