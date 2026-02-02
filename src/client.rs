@@ -13,11 +13,12 @@ const API_URL: &str = "https://t.17track.net/track/restapi";
 
 const INVALID_SIGN_CODE: i32 = -11;
 const INVALID_SESSION_CODE: i32 = -14; // Session/cookie expired (empty shipments, empty guid)
-const INVALID_UIP_CODE: i32 = -5; // Session invalid (uIP)
+const INVALID_UIP_CODE: i32 = -5; // IP-based rate limiting (uIP)
 const PENDING_SHIPMENT_CODE: i32 = 100;
 const NOT_FOUND_SHIPMENT_CODE: i32 = 400;
 const PENDING_RETRY_DELAY: Duration = Duration::from_secs(2);
 const MAX_PENDING_RETRIES: u32 = 10; // Avoid long loops on invalid sessions
+const MAX_CREDENTIAL_REFRESHES: u32 = 2; // Circuit breaker for credential/uIP errors
 
 /// Configuration for Track17Client
 #[derive(Debug, Clone, Default)]
@@ -286,6 +287,7 @@ impl Track17Client {
         let mut current_creds = self.ensure_credentials().await?;
 
         let mut pending_retries = 0;
+        let mut credential_refreshes = 0u32;
         let mut session_guid = String::new();
 
         // Track state per tracking number: (number, carrier, resolved_shipment)
@@ -354,16 +356,33 @@ impl Track17Client {
                     .join(", ")
             );
 
-            // Handle sign/session expiration - need to re-generate credentials
+            // Handle sign/session/uIP errors — may need credential refresh or is rate limiting
             let is_uip = response.meta.message.to_lowercase().contains("uip");
             if response.meta.code == INVALID_SIGN_CODE
                 || response.meta.code == INVALID_SESSION_CODE
                 || response.meta.code == INVALID_UIP_CODE
                 || is_uip
             {
+                if credential_refreshes >= MAX_CREDENTIAL_REFRESHES {
+                    let hint = if response.meta.code == INVALID_UIP_CODE || is_uip {
+                        "This is likely IP-based rate limiting (uIP), not expired credentials."
+                    } else {
+                        "Credential generation may be broken."
+                    };
+                    anyhow::bail!(
+                        "API rejected request after {} credential refresh attempts \
+                         (code: {}, message: \"{}\"). {}",
+                        credential_refreshes,
+                        response.meta.code,
+                        response.meta.message,
+                        hint,
+                    );
+                }
+
+                credential_refreshes += 1;
                 eprintln!(
-                    "Credentials expired (code {}), refreshing...",
-                    response.meta.code
+                    "Credentials rejected (code {}), refreshing ({}/{})...",
+                    response.meta.code, credential_refreshes, MAX_CREDENTIAL_REFRESHES,
                 );
 
                 // Invalidate cache (drops runtime, clears credentials and assets)
